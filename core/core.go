@@ -1,22 +1,24 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
-	"github.com/vishvananda/netlink"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 type WireGuardServer struct {
 	client        *wgctrl.Client
+	wk            string
 	interfaceName string
 	mutex         sync.Mutex
 }
@@ -25,14 +27,14 @@ type WGPeer struct {
 	IPS       []net.IPNet
 }
 
-func NewWireGuardServer(interfaceName, serverPriv string, listenPort int) (*WireGuardServer, error) {
+func NewWireGuardServer(interfaceName, serverPriv string, listenPort, nodeId int) (*WireGuardServer, error) {
 	// Parse the private key
 	privKey, err := wgtypes.ParseKey(serverPriv)
 	if err != nil {
 		log.Fatalf("failed to parse private key: %v", err)
 	}
 	// 创建 WireGuard 配置文件
-	err = createWireGuardConfigFile(interfaceName, privKey, listenPort)
+	err = createWireGuardConfigFile(interfaceName, privKey, listenPort, nodeId)
 	if err != nil {
 		log.Fatalf("failed to create config file: %v", err)
 	}
@@ -56,6 +58,10 @@ func NewWireGuardServer(interfaceName, serverPriv string, listenPort int) (*Wire
 		}
 	}
 
+	wk, err := getRouteInfo()
+	if err != nil {
+		log.Fatalf("failed to list WireGuard devices: %v", err)
+	}
 	if !found {
 		// 创建一个虚拟的 WireGuard 设备
 		cmd := exec.Command("ip", "link", "add", "dev", interfaceName, "type", "wireguard")
@@ -72,7 +78,7 @@ func NewWireGuardServer(interfaceName, serverPriv string, listenPort int) (*Wire
 		}
 
 		// 配置 IP 地址等
-		cmd = exec.Command("ip", "addr", "add", "15.0.0.1/24", "dev", interfaceName)
+		cmd = exec.Command("ip", "addr", "add", "15.0.0."+nodeId+"/24", "dev", interfaceName)
 		err = cmd.Run()
 		if err != nil {
 			return nil, fmt.Errorf("failed to assign IP to WireGuard device: %v", err)
@@ -91,13 +97,14 @@ func NewWireGuardServer(interfaceName, serverPriv string, listenPort int) (*Wire
 		log.Fatalf("failed to configure WireGuard device: %v", err)
 	}
 	// Apply the PostUp iptables rules
-	if err := execIptablesPostUp(interfaceName); err != nil {
+	if err := execIptablesPostUp(interfaceName, wk); err != nil {
 		log.Fatalf("failed to execute PostUp iptables rules: %v", err)
 	}
 
 	// Return the WireGuard server instance
 	return &WireGuardServer{
 		client:        client,
+		wk:            wk,
 		interfaceName: interfaceName,
 	}, nil
 }
@@ -110,18 +117,18 @@ func fileExists(filename string) bool {
 }
 
 // 创建 WireGuard 配置文件
-func createWireGuardConfigFile(interfaceName string, privateKey wgtypes.Key, listenPort int) error {
+func createWireGuardConfigFile(interfaceName string, privateKey wgtypes.Key, listenPort, nodeId int) error {
 	configContent := fmt.Sprintf(`
 [Interface]
 PrivateKey = %s
-Address = 15.0.0.1/24
+Address = 15.0.0.%d/24
 ListenPort = %d
 
 [Peer]
 PublicKey = your_peer_public_key
-AllowedIPs = 15.0.0.2/32
+AllowedIPs = 0.0.0.0/0
 PersistentKeepalive = 25
-`, privateKey.String(), listenPort)
+`, privateKey.String(), nodeId, listenPort)
 	// 将配置写入文件
 	filePath := fmt.Sprintf("/etc/wireguard/%s.conf", interfaceName)
 	if fileExists(filePath) {
@@ -139,34 +146,28 @@ PersistentKeepalive = 25
 	fmt.Printf("WireGuard config file created at %s\n", filePath)
 	return nil
 }
-func ensureInterfaceUp(ifName string, cidr string) error {
-	link, err := netlink.LinkByName(ifName)
-	if err != nil {
-		return err
-	}
 
-	addr, err := netlink.ParseAddr(cidr)
+func getRouteInfo() (string, error) {
+	cmd := exec.Command("ip", "route", "show", "default")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
 	if err != nil {
-		return err
+		return "", err
 	}
-
-	addrs, err := netlink.AddrList(link, 0) // ✅ 不指定 family
-	if err != nil {
-		return err
-	}
-
-	for _, a := range addrs {
-		if a.IP.Equal(addr.IP) && a.Mask.String() == addr.Mask.String() {
-			return netlink.LinkSetUp(link)
+	output := out.String()
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "default" {
+			return fields[4], nil // fields[4] 通常是网卡接口名
 		}
 	}
-
-	_ = netlink.AddrAdd(link, addr) // 已存在会报错，忽略即可
-	return netlink.LinkSetUp(link)
+	return "", fmt.Errorf("default route not found")
 }
 
 // execIptablesPostUp 执行 PostUp 网络配置
-func execIptablesPostUp(interfaceName string) error {
+func execIptablesPostUp(interfaceName, wk string) error {
 	// 配置 iptables 规则，启动网络地址转换 (NAT)
 	cmd := exec.Command("iptables", "-A", "FORWARD", "-i", interfaceName, "-j", "ACCEPT")
 	if err := cmd.Run(); err != nil {
@@ -178,7 +179,7 @@ func execIptablesPostUp(interfaceName string) error {
 		return fmt.Errorf("failed to execute iptables -A FORWARD: %v", err)
 	}
 
-	cmd = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", "ens19", "-j", "MASQUERADE")
+	cmd = exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING", "-o", wk, "-j", "MASQUERADE")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to execute iptables POSTROUTING: %v", err)
 	}
@@ -191,7 +192,7 @@ func execIptablesPostUp(interfaceName string) error {
 func (wg *WireGuardServer) execIptablesPostDown() error {
 	// Define iptables commands for cleanup
 	cmds := [][]string{
-		{"-t", "nat", "-D", "POSTROUTING", "-o", "ens19", "-j", "MASQUERADE"},
+		{"-t", "nat", "-D", "POSTROUTING", "-o", wg.wk, "-j", "MASQUERADE"},
 		{"-D", "FORWARD", "-i", wg.interfaceName, "-j", "ACCEPT"},
 		{"-D", "FORWARD", "-o", wg.interfaceName, "-j", "ACCEPT"},
 	}

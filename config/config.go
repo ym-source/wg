@@ -8,7 +8,6 @@ import (
 
 	"wg/core"
 
-	"github.com/sagernet/sing-box/option"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
@@ -16,13 +15,11 @@ import (
 var mu sync.Mutex
 
 // 存储当前用户的配置信息
-var currentPeers []option.WireGuardPeer
-var optionOutbound []option.Outbound
 var wgServer *core.WireGuardServer
 
 // BuildOptions 构建 SingBox 配置
-func BuildOptions(interfaceName, serverPriv string, listenPort int) (*core.WireGuardServer, error) {
-	wgServer1, err := core.NewWireGuardServer(interfaceName, serverPriv, listenPort)
+func BuildOptions(interfaceName, serverPriv string, listenPort, nodeId int) (*core.WireGuardServer, error) {
+	wgServer1, err := core.NewWireGuardServer(interfaceName, serverPriv, listenPort, nodeId)
 	if err != nil {
 		log.Fatalf("failed to create WireGuard server: %v", err)
 	} else {
@@ -76,34 +73,21 @@ func AddPeer(publicKey, psk, allowedIP string) {
 
 // RemovePeer 动态删除 Peer
 func RemovePeer(publicKey string) {
-	// mu.Lock()
-	// defer mu.Unlock()
+	mu.Lock()
+	defer mu.Unlock()
+	// 解析公钥并检查错误
+	clientPublicKey, err := wgtypes.ParseKey(publicKey)
+	if err != nil {
+		log.Fatalf("Failed to parse public key: %v", err) // 处理错误
+	}
+	err = wgServer.RemovePeer(clientPublicKey)
+	if err != nil {
+		log.Fatalf("failed to add client peer: %v", err)
+	}
 
-	// var updatedPeers []option.WireGuardPeer
-	// for _, peer := range currentPeers {
-	// 	if peer.PublicKey != publicKey {
-	// 		updatedPeers = append(updatedPeers, peer)
-	// 	}
-	// }
-
-	// // 更新 Peers 列表
-	// currentPeers = updatedPeers
-
-	// // 重新加载 SingBox 配置
-	// if SingBoxCore != nil {
-	// 	SingBoxCore.Reload(BuildOptions())
-	// } else {
-	// 	// Initialize SingBoxCore (if it's not already initialized)
-	// 	if SingBoxCore == nil {
-	// 		var err error
-	// 		SingBoxCore, err = core.NewCore(BuildOptions())
-	// 		if err != nil {
-	// 			log.Fatalf("Failed to initialize SingBoxCore: %v", err)
-	// 		}
-	// 	}
-	// 	// Start SingBoxCore
-	// 	if SingBoxCore != nil {
-	// 		SingBoxCore.Start()
-	// 	}
-	// }
+	// 获取状态
+	_, err = wgServer.GetStatus()
+	if err != nil {
+		log.Fatalf("failed to get WireGuard status: %v", err)
+	}
 }
