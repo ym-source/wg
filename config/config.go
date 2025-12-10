@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/ym-source/wg/core"
+	"wg/core"
 
 	"github.com/sagernet/sing-box/option"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"

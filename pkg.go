@@ -5,9 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sync"
-
-	"github.com/ym-source/wg/config"
-	"github.com/ym-source/wg/core"
+	"wg/config"
+	"wg/core"
 
 	"golang.org/x/crypto/curve25519"
 )
