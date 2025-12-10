@@ -1,4 +1,4 @@
-module wg
+module github.com/ym-source/wg
 
 go 1.24.0
 

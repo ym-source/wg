@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 
-	"wg/core"
+	"github.com/ym-source/wg/core"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )

@@ -3,8 +3,9 @@ package wg
 import (
 	"fmt"
 	"sync"
-	"wg/config"
-	"wg/core"
+
+	"github.com/ym-source/wg/config"
+	"github.com/ym-source/wg/core"
 )
 
 // ------------------- 数据结构 -------------------
