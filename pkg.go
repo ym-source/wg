@@ -21,22 +21,20 @@ type User struct {
 }
 
 var (
-	mu           sync.Mutex
-	users        []*User
-	serverPubKey string // 服务端公钥（可动态生成或固定）
+	mu    sync.Mutex
+	users []*User
 )
 
 type Device struct {
 	wgServer *core.WireGuardServer
 }
 
-func New(nodeId, serverPriv string, listenPort int) *Device {
+func New(nodeId, serverPriv string, listenPort int) (*Device, error) {
 	wgServer, err := config.BuildOptions("wg"+nodeId, serverPriv, listenPort)
 	if err != nil {
-		fmt.Println("Error initializing WireGuard server:", err)
-		return nil
+		return nil, err
 	}
-	return &Device{wgServer: wgServer}
+	return &Device{wgServer: wgServer}, nil
 }
 func (d *Device) Stop() {
 	defer d.wgServer.Close()
