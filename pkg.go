@@ -25,7 +25,7 @@ type Device struct {
 }
 
 func New(serverPriv string, listenPort, nodeId int) (*Device, error) {
-	wgServer, err := config.BuildOptions("wg"+string(nodeId), serverPriv, listenPort, nodeId)
+	wgServer, err := config.BuildOptions("wg"+fmt.Sprint(nodeId), serverPriv, listenPort, nodeId)
 	if err != nil {
 		return nil, err
 	}
