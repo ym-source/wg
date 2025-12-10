@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"sync"
 
@@ -21,7 +20,7 @@ var wgServer *core.WireGuardServer
 func BuildOptions(interfaceName, serverPriv string, listenPort, nodeId int) (*core.WireGuardServer, error) {
 	wgServer1, err := core.NewWireGuardServer(interfaceName, serverPriv, listenPort, nodeId)
 	if err != nil {
-		log.Fatalf("failed to create WireGuard server: %v", err)
+		return nil, fmt.Errorf("failed to create WireGuard server: %v", err)
 	} else {
 		wgServer = wgServer1
 	}
@@ -29,7 +28,7 @@ func BuildOptions(interfaceName, serverPriv string, listenPort, nodeId int) (*co
 }
 
 // 添加新的 Peer 配置
-func AddPeer(publicKey, psk, allowedIP string) {
+func AddPeer(publicKey, psk, allowedIP string) error {
 	mu.Lock()
 	defer mu.Unlock()
 	// 添加客户端
@@ -39,8 +38,7 @@ func AddPeer(publicKey, psk, allowedIP string) {
 	for _, cidr := range cidrs {
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			fmt.Println("Error parsing CIDR:", err)
-			return
+			return fmt.Errorf("Error parsing CIDR:", err)
 		}
 		// 将 IPNet 加入切片
 		ips = append(ips, *ipnet) // 这里使用 *ipnet 来解引用 ipnet，避免类型不匹配
@@ -48,11 +46,11 @@ func AddPeer(publicKey, psk, allowedIP string) {
 	// 解析公钥并检查错误
 	clientPublicKey, err := wgtypes.ParseKey(publicKey)
 	if err != nil {
-		log.Fatalf("Failed to parse public key: %v", err) // 处理错误
+		return fmt.Errorf("Failed to parse public key: %v", err)
 	} // 替换为客户端公钥
 	presharedKey, err := wgtypes.ParseKey(psk)
 	if err != nil {
-		log.Fatalf("Failed to parse public key: %v", err) // 处理错误
+		return fmt.Errorf("Failed to parse public key: %v", err)
 	} // 替换为客户端公钥
 	// 创建 Peer
 	peer := core.WGPeer{
@@ -61,33 +59,35 @@ func AddPeer(publicKey, psk, allowedIP string) {
 	}
 	err = wgServer.AddPeer(peer, &presharedKey)
 	if err != nil {
-		log.Fatalf("failed to add client peer: %v", err)
+		return fmt.Errorf("failed to add client peer: %v", err)
 	}
 
 	// 获取状态
 	_, err = wgServer.GetStatus()
 	if err != nil {
-		log.Fatalf("failed to get WireGuard status: %v", err)
+		return fmt.Errorf("failed to get WireGuard status: %v", err)
 	}
+	return nil
 }
 
 // RemovePeer 动态删除 Peer
-func RemovePeer(publicKey string) {
+func RemovePeer(publicKey string) error {
 	mu.Lock()
 	defer mu.Unlock()
 	// 解析公钥并检查错误
 	clientPublicKey, err := wgtypes.ParseKey(publicKey)
 	if err != nil {
-		log.Fatalf("Failed to parse public key: %v", err) // 处理错误
+		return fmt.Errorf("Failed to parse public key: %v", err)
 	}
 	err = wgServer.RemovePeer(clientPublicKey)
 	if err != nil {
-		log.Fatalf("failed to add client peer: %v", err)
+		return fmt.Errorf("failed to add client peer: %v", err)
 	}
 
 	// 获取状态
 	_, err = wgServer.GetStatus()
 	if err != nil {
-		log.Fatalf("failed to get WireGuard status: %v", err)
+		return fmt.Errorf("failed to get WireGuard status: %v", err)
 	}
+	return nil
 }

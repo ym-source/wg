@@ -2,7 +2,6 @@ package wg
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/ym-source/wg/config"
 	"github.com/ym-source/wg/core"
@@ -18,7 +17,6 @@ type User struct {
 }
 
 var (
-	mu    sync.Mutex
 	users []*User
 )
 
@@ -39,35 +37,13 @@ func (d *Device) Stop() {
 }
 
 // ------------------- 添加/删除用户 -------------------
-func (d *Device) AddUser(username, priv, pub, psk string) (*User, error) {
-	mu.Lock()
-	defer mu.Unlock()
-	user := &User{
-		Username:     username,
-		PrivateKey:   priv,
-		PublicKey:    pub,
-		PresharedKey: psk,
-	}
-
-	users = append(users, user)
-
+func (d *Device) AddUser(username, priv, pub, psk string) error {
 	// 写入 WG Peer
-	config.AddPeer(pub, psk, "0.0.0.0/0")
-	return user, nil
+	err := config.AddPeer(pub, psk, "0.0.0.0/0")
+	return err
 }
 
-func (d *Device) RemoveUser(publicKey string) {
-	config.RemovePeer(publicKey)
-	condition := func(user *User) bool { return user.PublicKey == publicKey }
-	users = filterUsers(users, condition)
-
-}
-func filterUsers(users []*User, condition func(*User) bool) []*User {
-	var result []*User
-	for _, user := range users {
-		if !condition(user) {
-			result = append(result, user)
-		}
-	}
-	return result
+func (d *Device) RemoveUser(publicKey string) error {
+	err := config.RemovePeer(publicKey)
+	return err
 }
