@@ -78,7 +78,7 @@ func NewWireGuardServer(interfaceName, serverPriv string, listenPort, nodeId int
 		}
 
 		// 配置 IP 地址等
-		cmd = exec.Command("ip", "addr", "add", "15.0.0."+nodeId+"/24", "dev", interfaceName)
+		cmd = exec.Command("ip", "addr", "add", "15.0.0."+string(nodeId)+"/24", "dev", interfaceName)
 		err = cmd.Run()
 		if err != nil {
 			return nil, fmt.Errorf("failed to assign IP to WireGuard device: %v", err)
